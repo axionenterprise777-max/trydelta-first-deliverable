@@ -1,29 +1,17 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getAuth } from "@/lib/get-auth";
+import { updateClient } from "@/lib/db";
 
-import { getUserByToken, setTenantForUser, updateClient } from "../../../../lib/mock-store";
-
-type Params = {
-  params: Promise<{ clientId: string }>;
-};
+type Params = { params: Promise<{ clientId: string }> };
 
 export async function PATCH(request: Request, context: Params) {
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
+
   const { clientId } = await context.params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("trydelta_session")?.value;
-  const tenantId = cookieStore.get("trydelta_tenant")?.value;
+  const body = await request.json();
 
-  if (!token) {
-    return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
-  }
-
-  const payload = await request.json();
-  const user = getUserByToken(token);
-  if (!user) {
-    return NextResponse.json({ message: "Sessao invalida." }, { status: 401 });
-  }
-  const scopedTenant = setTenantForUser(user, tenantId ?? undefined);
-  const updated = updateClient(user, scopedTenant.id, clientId, payload);
+  const updated = updateClient(auth.tenantId, clientId, auth.user.id, auth.role, body);
   if (!updated) {
     return NextResponse.json({ message: "Cliente nao encontrado." }, { status: 404 });
   }

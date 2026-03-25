@@ -1,33 +1,21 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getAuth } from "@/lib/get-auth";
+import { moveDeal } from "@/lib/db";
 
-import { getUserByToken, moveDealStage, setTenantForUser } from "../../../../../lib/mock-store";
-
-type RouteContext = {
-  params: Promise<{ dealId: string }>;
-};
+type RouteContext = { params: Promise<{ dealId: string }> };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const payload = await request.json();
-  const { searchParams } = new URL(request.url);
-  const requestedTenantId = searchParams.get("tenant_id");
-  const cookieStore = await cookies();
-  const token = cookieStore.get("trydelta_session")?.value;
-  const tenantId = requestedTenantId ?? cookieStore.get("trydelta_tenant")?.value;
-  const { dealId } = await context.params;
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
 
-  if (!token) {
-    return NextResponse.json(
-      { message: "Sessao ausente." },
-      { status: 401 },
-    );
+  const { dealId } = await context.params;
+  const body = await request.json();
+
+  if (!body.stage_id) {
+    return NextResponse.json({ message: "stage_id obrigatorio." }, { status: 400 });
   }
-  const user = getUserByToken(token);
-  if (!user) {
-    return NextResponse.json({ message: "Sessao invalida." }, { status: 401 });
-  }
-  const scopedTenant = setTenantForUser(user, tenantId ?? undefined);
-  const moved = moveDealStage(user, scopedTenant.id, dealId, payload.stage_id);
+
+  const moved = moveDeal(auth.tenantId, dealId, auth.user.id, auth.role, body.stage_id);
   if (!moved) {
     return NextResponse.json({ message: "Deal nao encontrado." }, { status: 404 });
   }

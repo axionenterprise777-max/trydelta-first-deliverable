@@ -1,39 +1,29 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-
-import { enqueueMessage, getUserByToken, listMessages, setTenantForUser } from "../../../lib/mock-store";
+import { getAuth } from "@/lib/get-auth";
+import { listMessages, enqueueMessage } from "@/lib/db";
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("trydelta_session")?.value;
-  const tenantId = cookieStore.get("trydelta_tenant")?.value;
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
 
-  if (!token) {
-    return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
-  }
-  const user = getUserByToken(token);
-  if (!user) {
-    return NextResponse.json({ message: "Sessao invalida." }, { status: 401 });
-  }
-  const scopedTenant = setTenantForUser(user, tenantId ?? undefined);
-  return NextResponse.json(listMessages(user, scopedTenant.id));
+  const sellerOnly = auth.role === "seller";
+  return NextResponse.json(listMessages(auth.tenantId, auth.user.id, sellerOnly));
 }
 
 export async function POST(request: Request) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("trydelta_session")?.value;
-  const tenantId = cookieStore.get("trydelta_tenant")?.value;
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
 
-  if (!token) {
-    return NextResponse.json({ message: "Sessao ausente." }, { status: 401 });
+  const body = await request.json();
+  if (!body.contact_name || !body.preview) {
+    return NextResponse.json({ message: "contact_name e preview obrigatorios." }, { status: 400 });
   }
 
-  const payload = await request.json();
-  const user = getUserByToken(token);
-  if (!user) {
-    return NextResponse.json({ message: "Sessao invalida." }, { status: 401 });
-  }
-  const scopedTenant = setTenantForUser(user, tenantId ?? undefined);
-  const result = enqueueMessage(user, scopedTenant.id, payload);
+  const result = enqueueMessage(auth.tenantId, auth.user.id, {
+    contact_name: body.contact_name,
+    preview: body.preview,
+    idempotency_key: body.idempotency_key ?? `auto-${Date.now()}`,
+    simulate_failure: body.simulate_failure,
+  });
   return NextResponse.json(result, { status: 202 });
 }

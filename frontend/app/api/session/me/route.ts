@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-
-import { getUserByToken } from "../../../../lib/mock-store";
+import { verifyToken } from "@/lib/auth";
+import { findUserById, sanitizeUser } from "@/lib/db";
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -10,20 +10,19 @@ export async function GET() {
   if (!token) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
-  const user = getUserByToken(token);
+
+  const payload = verifyToken(token);
+  if (!payload) {
+    return NextResponse.json({ authenticated: false }, { status: 401 });
+  }
+
+  const user = findUserById(payload.sub);
   if (!user) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
   return NextResponse.json({
     authenticated: true,
-    user: {
-      id: user.id,
-      tenant_id: user.tenant_id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      initials: user.initials,
-    },
+    user: sanitizeUser(user),
   });
 }
